@@ -1,7 +1,13 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const { WebcastPushConnection } = require('tiktok-live-connector');
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import { WebcastPushConnection } from 'tiktok-live-connector';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// В ES Modules нет встроенной переменной __dirname, поэтому создаем её
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
