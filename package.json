@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Виджет для TikTok Live батлов с анимацией и миссиями",
   "main": "server.js",
+  "type": "module",
   "scripts": {
     "start": "node server.js"
   },
