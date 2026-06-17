@@ -1,7 +1,8 @@
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
-import { WebcastPushConnection } from 'tiktok-live-connector';
+import pkg from 'tiktok-live-connector';
+const { WebcastPushConnection } = pkg;
 import path from 'path';
 import { fileURLToPath } from 'url';
 
