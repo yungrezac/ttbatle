@@ -1,0 +1,17 @@
+{
+  "name": "tiktok-live-widget",
+  "version": "1.0.0",
+  "description": "Виджет для TikTok Live батлов с анимацией и миссиями",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "tiktok-live-connector": "latest"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
