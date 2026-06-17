@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TikTok Live Виджет</title>
+    <!-- Подключаем Tailwind CSS для стилизации -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Подключаем FontAwesome для иконок -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Подключаем Socket.io (загрузится, когда сервер запущен) -->
+    <script src="/socket.io/socket.io.js"></script>
+
+    <style>
+        /* Анимации для Топ 3 донатеров */
+        .podium-item { 
+            opacity: 0; 
+            animation-fill-mode: forwards; 
+        }
+        
+        @keyframes popIn {
+            0% { transform: translateY(100px) scale(0.8); opacity: 0; }
+            70% { transform: translateY(-15px) scale(1.05); opacity: 1; }
+            100% { transform: translateY(0) scale(1); opacity: 1; }
+        }
+
+        @keyframes crownFloat {
+            0%, 100% { transform: translateY(0) rotate(-10deg); }
+            50% { transform: translateY(-8px) rotate(10deg); }
+        }
+
+        .anim-3rd { animation: popIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.5s forwards; }
+        .anim-2nd { animation: popIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) 1.5s forwards; }
+        .anim-1st { animation: popIn 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) 2.5s forwards; }
+        
+        .crown-icon { animation: crownFloat 3s ease-in-out infinite; }
+
+        /* Эффект свечения для первого места */
+        .glow-gold { box-shadow: 0 0 30px rgba(250, 204, 21, 0.6); }
+
+        /* Скрываем скроллбар в виджете */
+        ::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="transition-colors duration-300">
+
+    <!-- ПАНЕЛЬ УПРАВЛЕНИЯ (Отображается по умолчанию) -->
+    <div id="dashboard" class="hidden min-h-screen bg-gray-900 text-white p-6">
+        <div class="max-w-3xl mx-auto space-y-8">
+            <div class="text-center">
+                <h1 class="text-3xl font-bold text-pink-500 mb-2"><i class="fa-brands fa-tiktok"></i> TikTok Live Widget</h1>
+                <p class="text-gray-400">Управление батлами и миссиями</p>
+            </div>
+
+            <div class="bg-gray-800 p-6 rounded-2xl shadow-xl space-y-4 border border-gray-700">
+                <h2 class="text-xl font-semibold border-b border-gray-700 pb-2">1. Основные настройки</h2>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Никнейм в TikTok (без @)</label>
+                    <input type="text" id="tiktokUser" class="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:border-pink-500" placeholder="Например: my_awesome_stream">
+                </div>
+
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Ссылка на видео для миссии "X2"</label>
+                    <input type="text" id="videoX2" class="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:border-pink-500" placeholder="https://example.com/video_x2.mp4">
+                    <p class="text-xs text-gray-500 mt-1">Оставьте пустым для использования тестового видео.</p>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 p-6 rounded-2xl shadow-xl space-y-4 border border-gray-700">
+                <h2 class="text-xl font-semibold border-b border-gray-700 pb-2">2. Управление стримом</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button onclick="triggerMission('x2')" class="bg-blue-600 hover:bg-blue-500 transition p-4 rounded-xl font-bold shadow-lg flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-bolt"></i> <span>Включить видео "X2"</span>
+                    </button>
+                    <button onclick="endMission()" class="bg-gray-600 hover:bg-gray-500 transition p-4 rounded-xl font-bold shadow-lg flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-stop"></i> <span>Остановить видео</span>
+                    </button>
+                    <button onclick="triggerBattleEnd()" class="bg-pink-600 hover:bg-pink-500 transition p-4 rounded-xl font-bold shadow-lg flex items-center justify-center space-x-2 col-span-1 md:col-span-2">
+                        <i class="fa-solid fa-trophy"></i> <span>Завершить батл (Показать Топ-3)</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 p-6 rounded-2xl shadow-xl space-y-4 border border-gray-700">
+                <h2 class="text-xl font-semibold border-b border-gray-700 pb-2">3. Ссылка для виджета</h2>
+                <p class="text-sm text-gray-400">Скопируйте эту ссылку и вставьте как источник "Браузер" (Browser Source) в TikTok Live Studio или OBS. Установите размеры под ваш экран (например, 1080x1920).</p>
+                <div class="flex space-x-2">
+                    <input type="text" id="widgetLink" readonly class="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white">
+                    <button onclick="copyWidgetUrl()" class="bg-green-600 hover:bg-green-500 px-6 rounded-lg font-bold transition">Копировать</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ВИДЖЕТ (Прозрачный, отображается в OBS) -->
+    <div id="widget" class="hidden fixed inset-0 overflow-hidden">
+        
+        <!-- Слой 1: Видео для миссий -->
+        <video id="missionVideo" class="hidden absolute inset-0 w-full h-full object-cover z-10" playsinline></video>
+
+        <!-- Слой 2: Анимация Топ 3 донатеров -->
+        <div id="top3Overlay" class="hidden absolute inset-0 bg-black/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-4">
+            
+            <h1 id="top3Title" class="text-4xl font-black text-white mb-16 tracking-widest uppercase text-center drop-shadow-2xl opacity-0 transition-opacity duration-500">
+                Итоги Батла
+            </h1>
+
+            <div id="podiumContainer" class="flex items-end justify-center space-x-4 h-[400px] w-full max-w-lg">
+                <!-- Место 2 (Слева) -->
+                <div id="place2" class="podium-item anim-2nd flex flex-col items-center w-1/3 pb-4">
+                    <div class="w-20 h-20 rounded-full border-4 border-gray-300 overflow-hidden mb-3 shadow-lg">
+                        <img id="avatar2" src="" class="w-full h-full object-cover" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=2'">
+                    </div>
+                    <div class="bg-gradient-to-t from-gray-500 to-gray-300 w-full rounded-t-xl text-center py-4 shadow-xl">
+                        <div class="text-2xl font-black text-white drop-shadow-md">2</div>
+                        <div id="name2" class="text-sm font-bold text-white truncate px-2 mt-1">Имя</div>
+                        <div id="pts2" class="text-xs text-gray-100 font-bold mt-1 bg-black/20 mx-2 rounded-full py-1">0 очков</div>
+                    </div>
+                </div>
+
+                <!-- Место 1 (По центру) -->
+                <div id="place1" class="podium-item anim-1st flex flex-col items-center w-1/3 pb-12">
+                    <i class="fa-solid fa-crown text-4xl text-yellow-400 mb-2 crown-icon drop-shadow-[0_0_10px_rgba(250,204,21,0.8)]"></i>
+                    <div class="w-28 h-28 rounded-full border-4 border-yellow-400 overflow-hidden mb-3 glow-gold">
+                        <img id="avatar1" src="" class="w-full h-full object-cover" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=1'">
+                    </div>
+                    <div class="bg-gradient-to-t from-yellow-600 to-yellow-300 w-full rounded-t-xl text-center py-6 shadow-xl relative overflow-hidden">
+                        <div class="absolute inset-0 bg-white/20 animate-pulse"></div>
+                        <div class="text-4xl font-black text-white drop-shadow-md relative z-10">1</div>
+                        <div id="name1" class="text-base font-black text-white truncate px-2 mt-1 relative z-10">Имя</div>
+                        <div id="pts1" class="text-sm text-yellow-900 font-black mt-2 bg-yellow-100/80 mx-2 rounded-full py-1 relative z-10">0 очков</div>
+                    </div>
+                </div>
+
+                <!-- Место 3 (Справа) -->
+                <div id="place3" class="podium-item anim-3rd flex flex-col items-center w-1/3">
+                    <div class="w-16 h-16 rounded-full border-4 border-orange-400 overflow-hidden mb-3 shadow-lg">
+                        <img id="avatar3" src="" class="w-full h-full object-cover" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=3'">
+                    </div>
+                    <div class="bg-gradient-to-t from-orange-700 to-orange-400 w-full rounded-t-xl text-center py-3 shadow-xl">
+                        <div class="text-xl font-black text-white drop-shadow-md">3</div>
+                        <div id="name3" class="text-xs font-bold text-white truncate px-2 mt-1">Имя</div>
+                        <div id="pts3" class="text-xs text-orange-100 font-bold mt-1 bg-black/20 mx-2 rounded-full py-0.5">0 очков</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- ЛОГИКА ОПРЕДЕЛЕНИЯ РЕЖИМА ---
+        const urlParams = new URLSearchParams(window.location.search);
+        const isWidget = urlParams.get('mode') === 'widget';
+        const currentUser = urlParams.get('user') || 'test_user';
+
+        // --- ГЛОБАЛЬНЫЕ ЭЛЕМЕНТЫ ---
+        const dashboardEl = document.getElementById('dashboard');
+        const widgetEl = document.getElementById('widget');
+        const videoEl = document.getElementById('missionVideo');
+        const overlayEl = document.getElementById('top3Overlay');
+        const titleEl = document.getElementById('top3Title');
+        let socket;
+
+        // --- ЗАПУСК ---
+        window.onload = () => {
+            if (isWidget) {
+                initWidget();
+            } else {
+                initDashboard();
+            }
+        };
+
+        // ==========================================
+        // ЛОГИКА ВИДЖЕТА (Для OBS)
+        // ==========================================
+        function initWidget() {
+            document.body.classList.add('bg-transparent');
+            widgetEl.classList.remove('hidden');
+
+            // Подключение к серверу (сработает, если запущен Node.js)
+            try {
+                if (typeof io !== 'undefined') {
+                    socket = io();
+                    socket.emit('join_stream', currentUser);
+
+                    socket.on('mission_start', data => playMissionVideo(data.type));
+                    socket.on('mission_end', () => hideMissionVideo());
+                    socket.on('battle_end', data => showTop3Animation(data.top3));
+                    socket.on('error', msg => console.error('Ошибка сервера:', msg));
+                } else {
+                    console.warn("Socket.io не найден. Виджет запущен в оффлайн-режиме предпросмотра.");
+                }
+            } catch (e) {
+                console.error("Ошибка инициализации сокетов:", e);
+            }
+
+            // Слушаем локальные сообщения для тестов в предпросмотре
+            window.addEventListener("message", (event) => {
+                if (event.data.action === 'play_video') playMissionVideo('x2', event.data.url);
+                if (event.data.action === 'stop_video') hideMissionVideo();
+                if (event.data.action === 'show_top3') showTop3Animation(event.data.data);
+            }, false);
+
+            // Обработчик окончания видео
+            videoEl.addEventListener('ended', hideMissionVideo);
+        }
+
+        function playMissionVideo(type, forceUrl = null) {
+            // Берем URL из локального хранилища или дефолтное красивое видео из интернета
+            const savedUrl = localStorage.getItem('video_x2');
+            const defaultUrl = 'https://cdn.pixabay.com/video/2021/08/04/83863-584742743_tiny.mp4'; 
+            
+            videoEl.src = forceUrl || savedUrl || defaultUrl;
+            videoEl.classList.remove('hidden');
+            videoEl.play().catch(e => console.error("Ошибка автовоспроизведения:", e));
+        }
+
+        function hideMissionVideo() {
+            videoEl.pause();
+            videoEl.currentTime = 0;
+            videoEl.classList.add('hidden');
+        }
+
+        function showTop3Animation(donators) {
+            if (!donators || donators.length === 0) return;
+
+            // Заполняем данные
+            const places = [donators[1], donators[0], donators[2]]; // 2, 1, 3 порядок в DOM
+            const domIds = [2, 1, 3];
+
+            places.forEach((user, index) => {
+                const id = domIds[index];
+                const placeEl = document.getElementById(`place${id}`);
+                
+                if (user) {
+                    document.getElementById(`name${id}`).textContent = user.name;
+                    document.getElementById(`pts${id}`).textContent = user.points + ' очков';
+                    if (user.avatar) document.getElementById(`avatar${id}`).src = user.avatar;
+                    placeEl.classList.remove('hidden');
+                } else {
+                    placeEl.classList.add('hidden'); // Скрываем, если нет донатера на это место
+                }
+            });
+
+            // Показываем оверлей
+            overlayEl.classList.remove('hidden');
+            
+            // Запускаем перерисовку для триггера анимаций
+            const podium = document.getElementById('podiumContainer');
+            podium.classList.remove('flex');
+            void podium.offsetWidth; // Магия CSS
+            podium.classList.add('flex');
+
+            setTimeout(() => { titleEl.style.opacity = '1'; }, 100);
+
+            // Автоматически скрываем через 12 секунд
+            setTimeout(() => {
+                titleEl.style.opacity = '0';
+                overlayEl.classList.add('hidden');
+            }, 12000);
+        }
+
+        // ==========================================
+        // ЛОГИКА ПАНЕЛИ УПРАВЛЕНИЯ
+        // ==========================================
+        function initDashboard() {
+            document.body.classList.add('bg-gray-900');
+            dashboardEl.classList.remove('hidden');
+
+            const userInput = document.getElementById('tiktokUser');
+            const urlInput = document.getElementById('videoX2');
+
+            // Загружаем сохраненные данные
+            userInput.value = localStorage.getItem('tiktokUser') || '';
+            urlInput.value = localStorage.getItem('video_x2') || '';
+            updateWidgetUrl();
+
+            userInput.addEventListener('input', updateWidgetUrl);
+            urlInput.addEventListener('input', () => localStorage.setItem('video_x2', urlInput.value));
+        }
+
+        function updateWidgetUrl() {
+            const user = document.getElementById('tiktokUser').value.trim();
+            localStorage.setItem('tiktokUser', user);
+            const baseUrl = window.location.href.split('?')[0];
+            document.getElementById('widgetLink').value = user ? `${baseUrl}?mode=widget&user=${user}` : 'Введите никнейм...';
+        }
+
+        function copyWidgetUrl() {
+            const link = document.getElementById('widgetLink').value;
+            if (link.includes('mode=widget')) {
+                navigator.clipboard.writeText(link).then(() => {
+                    alert('Ссылка скопирована! Вставьте её в OBS.');
+                });
+            } else {
+                alert('Сначала введите никнейм!');
+            }
+        }
+
+        // Вызов API (с фолбеком на визуальную симуляцию, если сервер не запущен)
+        async function triggerMission(type) {
+            const user = document.getElementById('tiktokUser').value.trim() || 'test_user';
+            try {
+                const res = await fetch('/api/trigger-mission', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: user, missionType: type })
+                });
+                if (!res.ok) throw new Error("Сервер недоступен");
+            } catch (err) {
+                // Фолбек для тестирования: показываем виджет поверх дашборда
+                simulateWidgetAction('play_video', { url: document.getElementById('videoX2').value });
+            }
+        }
+
+        async function endMission() {
+            const user = document.getElementById('tiktokUser').value.trim() || 'test_user';
+            try {
+                await fetch('/api/end-mission', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: user })
+                });
+            } catch (err) {
+                simulateWidgetAction('stop_video');
+            }
+        }
+
+        async function triggerBattleEnd() {
+            const user = document.getElementById('tiktokUser').value.trim() || 'test_user';
+            try {
+                const res = await fetch('/api/end-battle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: user })
+                });
+                if (!res.ok) throw new Error("Сервер недоступен");
+            } catch (err) {
+                // Тестовые мок-данные
+                const mockData = [
+                    { name: "Спонсор Pro", avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=King", points: 85400 },
+                    { name: "Анна", avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Anna", points: 42100 },
+                    { name: "Геймер99", avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Gamer", points: 15300 }
+                ];
+                simulateWidgetAction('show_top3', mockData);
+            }
+        }
+
+        function simulateWidgetAction(action, data = null) {
+            // Если мы тестируем без сервера, инициализируем визуальный слой виджета поверх панели
+            if (!document.getElementById('widget').classList.contains('hidden') === false) {
+                document.getElementById('widget').classList.remove('hidden');
+                document.getElementById('widget').style.pointerEvents = 'none'; // Чтобы не мешать кликам
+            }
+            window.postMessage({ action, data, url: data?.url }, "*");
+        }
+    </script>
+</body>
+</html>
